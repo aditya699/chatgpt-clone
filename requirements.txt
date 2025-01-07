@@ -1,0 +1,14 @@
+fastapi
+uvicorn
+pydantic
+python-dotenv
+azure-cosmos
+sqlalchemy
+pyodbc 
+google-auth 
+google-auth-oauthlib 
+authlib 
+itsdangerous
+python-jose[cryptography]
+httpx
+pymongo[srv]
