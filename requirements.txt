@@ -12,3 +12,4 @@ itsdangerous
 python-jose[cryptography]
 httpx
 pymongo[srv]
+motor

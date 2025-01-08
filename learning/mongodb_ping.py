@@ -1,7 +1,7 @@
-import os
+
 from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi
-
+import os
 uri = os.getenv("MONGO_CON")
 
 # Create a new client and connect to the server

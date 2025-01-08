@@ -7,7 +7,10 @@ from dotenv import load_dotenv
 from urllib.parse import urlencode
 import requests
 from typing import Optional
-from ..auth.utils import verify_token
+from ..auth.utils import verify_token,update_user_last_login
+from motor.motor_asyncio import AsyncIOMotorClient
+from datetime import datetime
+
 # Load environment variables
 load_dotenv()
 
@@ -20,8 +23,6 @@ TENANT_ID = os.getenv("TENANT_ID")
 CLIENT_SECRET = os.getenv("CLIENT_SECRET")
 REDIRECT_URI = os.getenv("REDIRECT_URI")
 AUTHORITY = f"https://login.microsoftonline.com/{TENANT_ID}"
-
-
 
 # OAuth2 endpoints
 AUTHORIZE_ENDPOINT = f"{AUTHORITY}/oauth2/v2.0/authorize"
@@ -37,6 +38,8 @@ async def login(request: Request):
         # Check for valid session first
         token_check = verify_token(request)
         if token_check is None:  # Valid session exists
+            # Update last login time using our utility function
+            await update_user_last_login(request)
             return RedirectResponse(url="/")
             
         # No valid session, proceed with Azure login
@@ -57,9 +60,6 @@ async def login(request: Request):
 
 @router.get("/callback")
 async def auth_callback(request: Request, code: Optional[str] = None, error: Optional[str] = None):
-    """
-    Handle the callback from Azure AD
-    """
     try:
         if error:
             raise HTTPException(status_code=400, detail=f"Authentication error: {error}")
@@ -87,18 +87,41 @@ async def auth_callback(request: Request, code: Optional[str] = None, error: Opt
         user_response.raise_for_status()
         user_info = user_response.json()
 
-        # Azure returns expires_in in seconds, convert to timestamp
-        expires_at = time.time() + token_data.get("expires_in", 3600)  # Default 1 hour
-         
-        # Get username from user info
+        # Get user details from Azure AD
+        email = user_info.get("mail") or user_info.get("userPrincipalName")
         display_name = user_info.get("displayName", "User")
-        # Store both token and expiry
+
+        # Connect to MongoDB
+        client = AsyncIOMotorClient(os.getenv("MONGO_CON"))
+        db = client.chatbot
+
+        # Check if user exists
+        existing_user = await db.users.find_one({"email": email})
+        
+        if not existing_user:
+            # Create new user if they don't exist
+            new_user = {
+                "email": email,
+                "display_name": display_name,
+                "last_login": datetime.utcnow(),
+                "training_completed": False
+            }
+            await db.users.insert_one(new_user)
+        else:
+            # Update last login for existing user
+            await db.users.update_one(
+                {"email": email},
+                {"$set": {"last_login": datetime.utcnow()}}
+            )
+
+        # Store in session
         request.session["user"] = display_name
         request.session["access_token"] = access_token
-        request.session["token_expires_at"] = expires_at
+        request.session["token_expires_at"] = time.time() + token_data.get("expires_in", 3600)
+        request.session["email"] = email  # Add email to session
 
-        # Redirect to home route
         return RedirectResponse(url="/", status_code=303)
+        
     except requests.exceptions.RequestException as e:
         raise HTTPException(status_code=500, detail=f"Error communicating with Microsoft: {str(e)}")
     except Exception as e:
