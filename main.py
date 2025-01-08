@@ -6,6 +6,7 @@ from app.auth.route import router as auth_router
 import uvicorn
 import os
 from dotenv import load_dotenv
+from app.auth.utils import verify_token
 
 # Load environment variables
 load_dotenv()
@@ -35,17 +36,20 @@ app.add_middleware(
 # Include routers
 app.include_router(auth_router, prefix="/auth", tags=["Authentication"])
 
-# Root endpoint with session check
+#Root endpoint
 @app.get("/")
 async def root(request: Request):
-    # Check if user is authenticated via session
-    session = request.session
-    if "user" not in session:
-        # Redirect to login if no session exists
-        return RedirectResponse(url="/auth/login", status_code=303)
+    # Verify token first
+    token_check = verify_token(request)
+    if token_check:
+        return token_check  # This will be the redirect response
     
-    return {"message": f"Welcome back, {session['user']}!", 
-            "status": "ChatBot Service API is running"}
+    session = request.session
+    return {
+        "message": f"Welcome back, {session['user']}!",
+        "status": "ChatBot Service API is running",
+        "Welcome Message":"The developer is trying his best to bring this up"
+    }
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

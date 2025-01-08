@@ -1,3 +1,5 @@
+#import
+import time
 from fastapi import APIRouter, Request, Response, HTTPException
 from fastapi.responses import RedirectResponse, JSONResponse
 import os
@@ -5,19 +7,20 @@ from dotenv import load_dotenv
 from urllib.parse import urlencode
 import requests
 from typing import Optional
-
+from ..auth.utils import verify_token
 # Load environment variables
 load_dotenv()
 
 # Initialize router
 router = APIRouter()
 
-# Azure AD Configuration
+#Azure AD Configuration
 CLIENT_ID = os.getenv("CLIENT_ID")
 TENANT_ID = os.getenv("TENANT_ID")
 CLIENT_SECRET = os.getenv("CLIENT_SECRET")
 REDIRECT_URI = os.getenv("REDIRECT_URI")
 AUTHORITY = f"https://login.microsoftonline.com/{TENANT_ID}"
+
 
 
 # OAuth2 endpoints
@@ -26,25 +29,27 @@ TOKEN_ENDPOINT = f"{AUTHORITY}/oauth2/v2.0/token"
 GRAPH_ENDPOINT = "https://graph.microsoft.com/v1.0/me"
 
 @router.get("/login")
-async def login():
+async def login(request: Request):
     """
     Redirect users to Azure AD login page
     """
     try:
-        # Define OAuth 2.0 parameters
+        # Check for valid session first
+        token_check = verify_token(request)
+        if token_check is None:  # Valid session exists
+            return RedirectResponse(url="/")
+            
+        # No valid session, proceed with Azure login
         auth_params = {
             "client_id": CLIENT_ID,
             "response_type": "code",
             "redirect_uri": REDIRECT_URI,
             "response_mode": "query",
             "scope": "User.Read openid profile email",
-            "state": "12345"  # In production, this should be a random secure string
+            "state": "12345"  # Should be secure random in production
         }
         
-        # Build authorization URL
         auth_url = f"{AUTHORIZE_ENDPOINT}?{urlencode(auth_params)}"
-        
-        # Redirect to Azure AD login
         return RedirectResponse(url=auth_url)
         
     except Exception as e:
@@ -82,13 +87,16 @@ async def auth_callback(request: Request, code: Optional[str] = None, error: Opt
         user_response.raise_for_status()
         user_info = user_response.json()
 
+        # Azure returns expires_in in seconds, convert to timestamp
+        expires_at = time.time() + token_data.get("expires_in", 3600)  # Default 1 hour
+         
         # Get username from user info
         display_name = user_info.get("displayName", "User")
-
-        # Set session data
+        # Store both token and expiry
         request.session["user"] = display_name
         request.session["access_token"] = access_token
-        
+        request.session["token_expires_at"] = expires_at
+
         # Redirect to home route
         return RedirectResponse(url="/", status_code=303)
     except requests.exceptions.RequestException as e:
