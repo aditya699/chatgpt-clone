@@ -8,6 +8,7 @@ import os
 from dotenv import load_dotenv
 from app.auth.utils import verify_token,update_user_last_login
 from app.training.routes import router as training_router
+from app.chat.routes import router as chat_router  
 
 # Load environment variables
 load_dotenv()
@@ -37,6 +38,7 @@ app.add_middleware(
 # Include routers
 app.include_router(auth_router, prefix="/auth", tags=["Authentication"])
 app.include_router(training_router, prefix="/training", tags=["Training"])
+app.include_router(chat_router, prefix="/chat", tags=["Chat"])  
 #Root endpoint
 @app.get("/")
 async def root(request: Request):
