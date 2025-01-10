@@ -39,6 +39,7 @@ app.add_middleware(
 app.include_router(auth_router, prefix="/auth", tags=["Authentication"])
 app.include_router(training_router, prefix="/training", tags=["Training"])
 app.include_router(chat_router, prefix="/chat", tags=["Chat"])  
+
 #Root endpoint
 @app.get("/")
 async def root(request: Request):
