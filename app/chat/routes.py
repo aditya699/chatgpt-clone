@@ -130,3 +130,66 @@ async def send_message(
         print(f"Error in send_message: {str(e)}")  # Add debug print
         raise HTTPException(status_code=500, detail=str(e))
     
+@router.get("/get-user-sessions")
+async def get_user_sessions(
+    request: Request,
+    page: int = 1,
+    limit: int = 10
+):
+    try:
+        # Verify token
+        token_check = verify_token(request)
+        if token_check is not None:
+            return token_check
+        
+        # Get user email from session
+        email = request.session.get("email")
+        if not email:
+            raise HTTPException(status_code=400, detail="No email found in session")
+        
+        # Connect to MongoDB
+        client = AsyncIOMotorClient(os.getenv("MONGO_CON"))
+        db = client.chatbot
+        
+        # Calculate skip for pagination
+        skip = (page - 1) * limit
+        
+        # Get total count for pagination
+        total_sessions = await db.chat_sessions.count_documents({"email": email})
+        
+        # Fetch sessions with pagination and sorting
+        cursor = db.chat_sessions.find(
+            {"email": email}
+        ).sort(
+            "updated_at", -1  # Sort by most recent first
+        ).skip(skip).limit(limit)
+        
+        # Convert cursor to list and format the response
+        sessions = []
+        async for session in cursor:
+            messages = []
+            for msg in session.get("messages", []):
+                messages.append({
+                    "role": msg["role"],
+                    "content": msg["content"],
+                    "timestamp": msg["timestamp"]
+                })
+            
+            sessions.append({
+                "session_id": str(session["_id"]),
+                "created_at": session["created_at"],
+                "updated_at": session["updated_at"],
+                "messages": messages,
+                "message_count": len(session["messages"])
+            })
+        
+        return {
+            "sessions": sessions,
+            "total": total_sessions,
+            "page": page,
+            "total_pages": (total_sessions + limit - 1) // limit
+        }
+        
+    except Exception as e:
+        print(f"Error in get_user_sessions: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
